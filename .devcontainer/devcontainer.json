@@ -1,0 +1,29 @@
+{
+	"name": "BioNeMo2 Development Container",
+	"runArgs": [
+		"--gpus=all",
+		"--shm-size=4g"
+	],
+    "image": "gitlab-master.nvidia.com/dl/transformerengine/transformerengine:main-pytorch-py3-base",
+	"postCreateCommand": "./.devcontainer/postCreateCommand.sh",
+	"remoteUser": "ubuntu",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+                "ms-python.black-formatter",
+				"eamodio.gitlens",
+				"streetsidesoftware.code-spell-checker",
+				"ms-azuretools.vscode-docker",
+				"njpwerner.autodocstring",
+				"ms-toolsai.jupyter",
+				"tamasfe.even-better-toml"
+			],
+			"settings": {
+				"python.defaultInterpreterPath": "/usr/bin/python",
+				"python.analysis.typeCheckingMode": "basic"
+			}
+		}
+	}
+}
