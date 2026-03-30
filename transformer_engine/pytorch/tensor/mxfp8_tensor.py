@@ -74,8 +74,10 @@ class MXFP8Quantizer(Quantizer):
         if not src.is_contiguous():
             src = src.contiguous()
 
-        # Launch cast kernel
-        tex.quantize(src, self, dst, noop_flag)
+        # Launch cast kernel via stable ABI
+        from transformer_engine.pytorch.tensor._quantize_stable import quantize_into
+
+        quantize_into(src, self, dst, noop_flag)
 
         # Update FP8 dtype
         dst._fp8_dtype = self.dtype
@@ -83,8 +85,14 @@ class MXFP8Quantizer(Quantizer):
         return dst
 
     def quantize_impl(self, tensor: torch.Tensor) -> QuantizedTensor:
-        """Quantize tensor implementation"""
-        return tex.quantize(tensor, self)
+        """Quantize tensor implementation via stable ABI"""
+        from transformer_engine.pytorch.tensor._quantize_stable import quantize_into
+
+        dst = self.make_empty(list(tensor.shape), dtype=tensor.dtype, device=tensor.device)
+        if tensor.numel() > 0:
+            t = tensor.contiguous() if not tensor.is_contiguous() else tensor
+            quantize_into(t, self, dst)
+        return dst
 
     def is_quantizable(self, inp: torch.Tensor) -> bool:
         """Returns whether or not given inp can be quantized"""

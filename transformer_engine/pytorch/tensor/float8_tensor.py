@@ -100,17 +100,37 @@ class Float8Quantizer(Quantizer):
         if not src.is_contiguous():
             src = src.contiguous()
 
-        # Launch cast kernel
-        tex.quantize(src, self, dst, noop_flag)
+        # Launch cast kernel via stable ABI
+        from transformer_engine.pytorch.tensor._quantize_stable import quantize_into
+
+        quantize_into(src, self, dst, noop_flag)
 
         # Update FP8 dtype
         dst._fp8_dtype = self.dtype
 
+        # quantize_into only fills rowwise data (_data). Mark transpose invalid so
+        # update_usage(columnwise_usage=True) will recreate it via _create_transpose().
+        dst._transpose_invalid = True
+
         return dst
 
     def quantize_impl(self, tensor: torch.Tensor) -> QuantizedTensor:
-        """Quantize tensor implementation"""
-        return tex.quantize(tensor, self)
+        """Quantize tensor implementation via stable ABI"""
+        from transformer_engine.pytorch.tensor._quantize_stable import quantize_into
+
+        dst = self.make_empty(list(tensor.shape), dtype=tensor.dtype, device=tensor.device)
+        # Initialize scale_inv from quantizer scale (C++ create_tensor does reciprocal(scale))
+        if hasattr(self, "scale") and self.scale is not None and self.scale.numel() > 0:
+            dst._scale_inv.copy_(1.0 / self.scale)
+        if tensor.numel() > 0:
+            t = tensor.contiguous() if not tensor.is_contiguous() else tensor
+            quantize_into(t, self, dst)
+            # quantize_into only fills rowwise data (_data). Mark the transpose
+            # as invalid so update_usage(columnwise_usage=True) will recreate it
+            # from _data via _create_transpose(), rather than using the
+            # uninitialized empty buffer allocated by make_empty.
+            dst._transpose_invalid = True
+        return dst
 
     def make_empty(
         self,
@@ -329,17 +349,32 @@ class Float8CurrentScalingQuantizer(Quantizer):
         if not src.is_contiguous():
             src = src.contiguous()
 
-        # Launch cast kernel
-        tex.quantize(src, self, dst, noop_flag)
+        # Launch cast kernel via stable ABI
+        from transformer_engine.pytorch.tensor._quantize_stable import quantize_into
+
+        quantize_into(src, self, dst, noop_flag)
 
         # Update FP8 dtype
         dst._fp8_dtype = self.dtype
 
+        # quantize_into only fills rowwise data (_data). Mark transpose invalid so
+        # update_usage(columnwise_usage=True) will recreate it via _create_transpose().
+        dst._transpose_invalid = True
+
         return dst
 
     def quantize_impl(self, tensor: torch.Tensor) -> QuantizedTensor:
-        """Quantize tensor implementation"""
-        return tex.quantize(tensor, self)
+        """Quantize tensor implementation via stable ABI"""
+        from transformer_engine.pytorch.tensor._quantize_stable import quantize_into
+
+        dst = self.make_empty(list(tensor.shape), dtype=tensor.dtype, device=tensor.device)
+        if tensor.numel() > 0:
+            t = tensor.contiguous() if not tensor.is_contiguous() else tensor
+            quantize_into(t, self, dst)
+            # quantize_into only fills rowwise data (_data). Mark the transpose
+            # as invalid so update_usage(columnwise_usage=True) will recreate it.
+            dst._transpose_invalid = True
+        return dst
 
     def make_empty(
         self,
