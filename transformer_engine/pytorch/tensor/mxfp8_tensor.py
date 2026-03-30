@@ -81,6 +81,8 @@ class MXFP8Quantizer(Quantizer):
 
         # Update FP8 dtype
         dst._fp8_dtype = self.dtype
+        # The stable ABI quantize path does not swizzle scales, so reset the flag
+        dst._with_gemm_swizzled_scales = False
 
         return dst
 
@@ -165,7 +167,10 @@ class MXFP8Quantizer(Quantizer):
             columnwise_scale_inv=columnwise_scale_inv,
             quantizer=self,
             requires_grad=requires_grad,
-            with_gemm_swizzled_scales=self.optimize_for_gemm,
+            # The stable ABI quantize path does not swizzle scales during
+            # quantization, so always report unswizzled. The GEMM C++ code
+            # will swizzle on-the-fly when it sees this flag is False.
+            with_gemm_swizzled_scales=False,
         )
 
     def calibrate(self, tensor: torch.Tensor) -> None:

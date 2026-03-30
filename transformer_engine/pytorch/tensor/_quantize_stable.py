@@ -270,6 +270,13 @@ def quantize_into(src, quantizer, dst, noop_flag=None):
     if "NVFP4" in q_type and amax is not None and amax.item() == 0.0:
         amax.fill_(6.0 * 448.0)
 
+    # The stable ABI quantize path does not swizzle MXFP8/NVFP4 scales during
+    # quantization. Ensure the flag is False so the GEMM C++ code will swizzle
+    # on-the-fly. This overrides any True value that may have been set during
+    # tensor construction via optimize_for_gemm=True on the quantizer.
+    if hasattr(dst, "_with_gemm_swizzled_scales"):
+        dst._with_gemm_swizzled_scales = False
+
     # For Float8Tensor (delayed scaling), _transpose may be pre-allocated by make_empty
     # when columnwise_usage=True, but it is not filled by ops.quantize above (only _data
     # gets filled). Mark _transpose_invalid=True so update_usage(columnwise_usage=True)
