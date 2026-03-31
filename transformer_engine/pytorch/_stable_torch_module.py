@@ -1035,12 +1035,60 @@ def generic_gemm(
     # After Float8Quantizer.update_quantized(), _transpose_invalid=True because quantize_into
     # only fills rowwise data. Create the FP8 transpose on-the-fly when missing.
     _NVTE_DELAYED = 0  # NVTE_DELAYED_TENSOR_SCALING
+    _NVTE_MXFP8 = 1  # NVTE_MXFP8_1D_SCALING
     if not transa and A_cw_data is None and A_sm == _NVTE_DELAYED and A_dtype in (7, 8):
         A_cw_data = _ops.fp8_transpose(A_data, A_dtype, None)
         A_cw_scale_inv = A_scale_inv
     if transb and B_cw_data is None and B_sm == _NVTE_DELAYED and B_dtype in (7, 8):
         B_cw_data = _ops.fp8_transpose(B_data, B_dtype, None)
         B_cw_scale_inv = B_scale_inv
+
+    # For MXFP8: when the GEMM needs columnwise data but it's missing or uninitialized
+    # (e.g., tensors produced by GEMM+GELU fusion that only have rowwise data), create
+    # columnwise data on-the-fly by dequantizing rowwise and re-quantizing bidirectionally.
+    def _ensure_mxfp8_columnwise(data, dtype, scale_inv, cw_data, cw_si, sm):
+        """Create MXFP8 columnwise data from rowwise if missing."""
+        if sm != _NVTE_MXFP8 or data is None or data.numel() == 0:
+            return cw_data, cw_si
+        # Dequantize rowwise data to get the high-precision source
+        src = _ops.dequantize(data, dtype, scale_inv, None, sm, 6)  # 6 = kBFloat16
+        # Allocate columnwise buffers if needed
+        if cw_data is None:
+            cw_data = torch.empty_like(data)
+        if cw_si is None:
+            cw_si = torch.empty_like(scale_inv)
+        # Save rowwise data/scale before bidirectional quantization overwrites them
+        rw_data_backup = data.clone()
+        rw_si_backup = scale_inv.clone()
+        # Re-quantize with both rowwise+columnwise (bidirectional)
+        _ops.quantize_bidirectional(
+            src,
+            data,
+            dtype,
+            None,
+            None,
+            scale_inv,
+            cw_data,
+            cw_si,
+            sm,
+            False,
+            0.0,
+            None,
+            False,  # nvfp4_2d_quantization
+        )
+        # Restore original rowwise data (only columnwise was needed)
+        data.copy_(rw_data_backup)
+        scale_inv.copy_(rw_si_backup)
+        return cw_data, cw_si
+
+    if not transa and A_sm == _NVTE_MXFP8 and A_dtype in (7, 8):
+        A_cw_data, A_cw_scale_inv = _ensure_mxfp8_columnwise(
+            A_data, A_dtype, A_scale_inv, A_cw_data, A_cw_scale_inv, A_sm
+        )
+    if transb and B_sm == _NVTE_MXFP8 and B_dtype in (7, 8):
+        B_cw_data, B_cw_scale_inv = _ensure_mxfp8_columnwise(
+            B_data, B_dtype, B_scale_inv, B_cw_data, B_cw_scale_inv, B_sm
+        )
 
     # When grad=True with bias, allocate a fresh dbias tensor for the GEMM kernel to write into.
     # The pybind path does the same: at::empty({B_shape[-1]}, dtype=out_tensor.dtype).

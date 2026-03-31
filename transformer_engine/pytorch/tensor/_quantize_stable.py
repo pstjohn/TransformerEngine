@@ -89,6 +89,92 @@ def quantize_into(src, quantizer, dst, noop_flag=None):
         and getattr(dst, "_columnwise_data", None) is not None
         and not hasattr(dst, "_data")  # exclude Float8Tensor (which uses _data/_transpose)
     )
+    # For MXFP8/NVFP4 columnwise-only: allocate temporary rowwise buffers so the
+    # bidirectional kernel can fill both. The GEMM only uses columnwise.
+    _col_only_bidir = _col_only and (
+        "MXFP8" in type(quantizer).__name__ or "NVFP4" in type(quantizer).__name__
+    )
+    if _col_only_bidir:
+        from transformer_engine.pytorch.utils import round_up_to_nearest_multiple
+        import math
+
+        q_name = type(quantizer).__name__
+        col_data = dst._columnwise_data
+        col_si = dst._columnwise_scale_inv
+
+        shape = list(src.shape)
+        M = math.prod(shape[:-1])
+        K = shape[-1]
+
+        if "MXFP8" in q_name:
+            from transformer_engine.pytorch.tensor.mxfp8_tensor import MXFP8_BLOCK_SCALING_SIZE
+
+            BLOCK = MXFP8_BLOCK_SCALING_SIZE
+            tmp_rw_data = torch.empty(M, K, dtype=torch.uint8, device=src.device)
+            si_shape = (
+                round_up_to_nearest_multiple(M, 128),
+                round_up_to_nearest_multiple(K // BLOCK, 4),
+            )
+            tmp_rw_si = torch.empty(si_shape, dtype=torch.uint8, device=src.device)
+            sm = 1  # MXFP8_1D_SCALING
+            te_dtype = 7  # kFloat8E4M3
+        else:
+            # NVFP4
+            BLOCK = 16  # NVFP4_BLOCK_SCALING_SIZE
+            tmp_rw_data = torch.empty(M, K // 2, dtype=torch.uint8, device=src.device)
+            si_shape = (
+                round_up_to_nearest_multiple(M, 128),
+                round_up_to_nearest_multiple(K // BLOCK, 4),
+            )
+            tmp_rw_si = torch.empty(si_shape, dtype=torch.uint8, device=src.device)
+            sm = 4  # NVFP4_1D_SCALING
+            te_dtype = 10  # kFloat4E2M1
+
+        fp8_dtype_attr = getattr(dst, "_fp8_dtype", None)
+        if fp8_dtype_attr is not None:
+            from transformer_engine.pytorch.tensor._extract import _FP8_DTYPE_TO_TE
+
+            te_dtype = _FP8_DTYPE_TO_TE.get(str(fp8_dtype_attr), te_dtype)
+
+        # For NVFP4, compute amax first
+        amax_tmp = None
+        if "NVFP4" in q_name:
+            amax_tmp = getattr(dst, "_amax_rowwise", None)
+            if amax_tmp is None:
+                amax_tmp = torch.zeros(1, dtype=torch.float32, device=src.device)
+            ops.compute_amax(src, amax_tmp)
+            _maybe_allreduce_amax(quantizer, [amax_tmp])
+
+        nvfp4_2d = getattr(quantizer, "with_2d_quantization", False)
+        force_pow_2 = getattr(quantizer, "force_pow_2_scales", False)
+        amax_eps = getattr(quantizer, "amax_epsilon", 0.0)
+
+        ops.quantize_bidirectional(
+            src,
+            tmp_rw_data,
+            te_dtype,
+            amax_tmp,
+            None,
+            tmp_rw_si,
+            col_data,
+            col_si,
+            sm,
+            force_pow_2,
+            amax_eps,
+            noop_flag,
+            nvfp4_2d,
+        )
+
+        # Copy amax for NVFP4
+        if "NVFP4" in q_name and amax_tmp is not None:
+            amax_cw = getattr(dst, "_amax_columnwise", None)
+            if amax_cw is not None:
+                amax_cw.copy_(amax_tmp)
+            if amax_tmp.item() == 0.0:
+                amax_tmp.fill_(6.0 * 448.0)
+
+        dst._with_gemm_swizzled_scales = False
+        return
     if _col_only:
         col_data = dst._columnwise_data
         col_si = getattr(dst, "_columnwise_scale_inv", None)
@@ -96,11 +182,18 @@ def quantize_into(src, quantizer, dst, noop_flag=None):
         from transformer_engine.pytorch.tensor._extract import _FP8_DTYPE_TO_TE
 
         out_dtype = _FP8_DTYPE_TO_TE.get(str(fp8_dtype_attr), 7) if fp8_dtype_attr else 7
-        block_dim = getattr(quantizer, "block_scaling_dim", 2)
-        out_sm = 3 if block_dim == 2 else 2  # BLOCK_SCALING_2D=3, BLOCK_1D=2
+        q_type_col = type(quantizer).__name__
+        if "NVFP4" in q_type_col:
+            out_sm = 4  # NVFP4_1D_SCALING
+        else:
+            block_dim = getattr(quantizer, "block_scaling_dim", 2)
+            out_sm = 3 if block_dim == 2 else 2  # BLOCK_SCALING_2D=3, BLOCK_1D=2
         force_pow_2 = getattr(quantizer, "force_pow_2_scales", False)
         amax_eps = getattr(quantizer, "amax_epsilon", 0.0)
-        if block_dim == 2:
+        if (
+            hasattr(quantizer, "block_scaling_dim")
+            and getattr(quantizer, "block_scaling_dim", 2) == 2
+        ):
             # 2D block scaling: quantize src (original shape) → tmp rowwise buffer,
             # then FP8-transpose into col_data and transpose the scale.
             # Do NOT pass src_transposed to ops.quantize: the kernel computes scale
@@ -193,6 +286,60 @@ def quantize_into(src, quantizer, dst, noop_flag=None):
     # asserts that scale_inv must NOT be set for non-FP8 outputs.
     is_fp8_or_fp4 = out_dtype in (7, 8, 9, 10)  # kFloat8E4M3, kFloat8E5M2, kFloat8E8M0, kFloat4E2M1
     effective_scale_inv = out_scale_inv if is_fp8_or_fp4 else None
+
+    # For MXFP8/NVFP4 with both rowwise and columnwise pre-allocated, use the fused
+    # bidirectional kernel that fills both buffers in one nvte_quantize_v2 call.
+    # This is essential because GEMM with NT layout reads columnwise data.
+    # For NVFP4, the columnwise data must be independently quantized (not just
+    # transposed from rowwise) because the per-block scales differ.
+    _bidir = (
+        ("MXFP8" in q_type or "NVFP4" in q_type)
+        and hasattr(dst, "_rowwise_data")
+        and getattr(dst, "_rowwise_data", None) is not None
+        and hasattr(dst, "_columnwise_data")
+        and getattr(dst, "_columnwise_data", None) is not None
+        and hasattr(dst, "_columnwise_scale_inv")
+        and getattr(dst, "_columnwise_scale_inv", None) is not None
+        and out_scale_inv is not None
+    )
+    if _bidir:
+        # For NVFP4, compute amax before quantization (the kernel doesn't do it)
+        if "NVFP4" in q_type and amax is not None:
+            ops.compute_amax(src, amax)
+            _maybe_allreduce_amax(quantizer, [amax])
+        col_data = dst._columnwise_data
+        col_si = dst._columnwise_scale_inv
+        ops.quantize_bidirectional(
+            src,
+            out_data,
+            out_dtype,
+            amax,
+            scale,
+            out_scale_inv,
+            col_data,
+            col_si,
+            out_sm,
+            force_pow_2,
+            amax_eps,
+            noop_flag,
+            nvfp4_2d,
+        )
+        # Set with_2d_quantization config for NVFP4 if needed
+        if "NVFP4" in q_type:
+            # Copy rowwise amax to columnwise amax
+            amax_rw = getattr(dst, "_amax_rowwise", None)
+            amax_cw = getattr(dst, "_amax_columnwise", None)
+            if amax_rw is not None and amax_cw is not None:
+                amax_cw.copy_(amax_rw)
+            elif amax_rw is not None and amax_cw is None:
+                dst._amax_columnwise = amax_rw.clone()
+            # Safety fallback for zero amax
+            if amax is not None and amax.item() == 0.0:
+                amax.fill_(6.0 * 448.0)
+        # Ensure swizzle flag is False (stable path doesn't swizzle during quantize)
+        if hasattr(dst, "_with_gemm_swizzled_scales"):
+            dst._with_gemm_swizzled_scales = False
+        return
 
     if use_existing_amax and amax is not None:
         ops.quantize_from_amax(

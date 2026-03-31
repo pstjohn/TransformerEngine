@@ -55,7 +55,7 @@ void quantize_bidirectional(Tensor input, Tensor output_rowwise_data, int64_t ou
                             Tensor output_rowwise_scale_inv, Tensor output_columnwise_data,
                             Tensor output_columnwise_scale_inv, int64_t scaling_mode,
                             bool force_pow_2_scales, double amax_epsilon,
-                            std::optional<Tensor> noop_flag) {
+                            std::optional<Tensor> noop_flag, bool nvfp4_2d_quantization) {
   auto shape = getStableTensorShape(input);
   auto te_dtype = static_cast<DType>(output_te_dtype);
   auto nvte_scaling = static_cast<NVTEScalingMode>(scaling_mode);
@@ -77,8 +77,15 @@ void quantize_bidirectional(Tensor input, Tensor output_rowwise_data, int64_t ou
   auto rw_si_shape = getStableTensorShape(output_rowwise_scale_inv);
   output_cu.set_rowwise_scale_inv(output_rowwise_scale_inv.data_ptr(), si_dtype, rw_si_shape);
 
-  // Use the same logical shape as input for columnwise data (they have the same shape)
-  output_cu.set_columnwise_data(output_columnwise_data.data_ptr(), te_dtype, shape);
+  // For MXFP8, columnwise data has the same logical shape as the input [M, K].
+  // For NVFP4/block-scaling, columnwise data is the transpose [K, M].
+  // Use the actual tensor shape to let TensorWrapper::shape() compute correctly.
+  auto cw_data_shape = getStableTensorShape(output_columnwise_data);
+  // FP4 data is packed (2 elements per byte). Double last dim for logical shape.
+  if (is_fp4_dtype(te_dtype) && !cw_data_shape.empty()) {
+    cw_data_shape.back() *= 2;
+  }
+  output_cu.set_columnwise_data(output_columnwise_data.data_ptr(), te_dtype, cw_data_shape);
 
   auto cw_si_shape = getStableTensorShape(output_columnwise_scale_inv);
   output_cu.set_columnwise_scale_inv(output_columnwise_scale_inv.data_ptr(), si_dtype, cw_si_shape);
@@ -98,6 +105,7 @@ void quantize_bidirectional(Tensor input, Tensor output_rowwise_data, int64_t ou
   }
   quant_config.set_force_pow_2_scales(force_pow_2_scales);
   quant_config.set_amax_epsilon(static_cast<float>(amax_epsilon));
+  quant_config.set_nvfp4_2d_quantization(nvfp4_2d_quantization);
 
   auto stream = getCurrentCUDAStreamRaw(input.get_device_index());
   nvte_quantize_v2(input_cu.data(), output_cu.data(), quant_config, stream);
@@ -225,7 +233,8 @@ STABLE_TORCH_LIBRARY_FRAGMENT(transformer_engine_stable, m) {
       "quantize_bidirectional(Tensor input, Tensor output_rowwise_data, int output_te_dtype, "
       "Tensor? output_amax, Tensor? output_scale, Tensor output_rowwise_scale_inv, "
       "Tensor output_columnwise_data, Tensor output_columnwise_scale_inv, "
-      "int scaling_mode, bool force_pow_2_scales, float amax_epsilon, Tensor? noop_flag) -> ()");
+      "int scaling_mode, bool force_pow_2_scales, float amax_epsilon, Tensor? noop_flag, "
+      "bool nvfp4_2d_quantization=False) -> ()");
   m.def(
       "dequantize(Tensor input_data, int input_te_dtype, Tensor? input_scale_inv, Tensor? "
       "input_amax, int scaling_mode, int output_te_dtype) -> Tensor");
