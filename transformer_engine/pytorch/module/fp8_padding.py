@@ -8,10 +8,11 @@ from typing import List, Optional, Tuple
 
 import torch
 
-import transformer_engine_torch as tex
 
 from ..quantization import FP8GlobalStateManager, get_align_size_for_quantization
 from ..jit import no_torch_dynamo
+
+_ops = torch.ops.transformer_engine
 
 
 __all__ = ["Fp8Padding"]
@@ -39,7 +40,7 @@ class _Fp8Padding(torch.autograd.Function):
         total_row = sum(padded_m_splits)
         out = torch.empty([total_row, in_features], dtype=inp.dtype, device=inp.device)
 
-        tex.fused_multi_row_padding(inp.view(-1, in_features), out, m_splits, padded_m_splits)
+        _ops.fused_multi_row_padding(inp.view(-1, in_features), out, m_splits, padded_m_splits)
 
         if is_grad_enabled:
             ctx.m_splits = m_splits
@@ -64,7 +65,7 @@ class _Fp8Padding(torch.autograd.Function):
                 [total_row, in_features], dtype=grad_output.dtype, device=grad_output.device
             )
 
-            tex.fused_multi_row_unpadding(
+            _ops.fused_multi_row_unpadding(
                 grad_output.view(-1, in_features), grad_input, ctx.padded_m_splits, ctx.m_splits
             )
 

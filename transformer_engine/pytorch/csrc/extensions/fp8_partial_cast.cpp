@@ -4,86 +4,102 @@
  * See LICENSE for license information.
  ************************************************************************/
 
-#include "../extensions.h"
+#include <transformer_engine/recipe.h>
 
-namespace transformer_engine::pytorch {
+#include "../stable_common.h"
 
-void fp8_block_scaling_compute_partial_amax(const at::Tensor &tensor, at::Tensor amax, size_t h,
-                                            size_t w, size_t start_offset, size_t block_len) {
-  TORCH_CHECK(block_len == 128, "Currently only block_len = 128 is supported");
-  TORCH_CHECK(amax.dim() == 2, "amax must be a 2D tensor");
-  TORCH_CHECK(amax.scalar_type() == at::ScalarType::Float, "amax must be a float tensor");
-  TORCH_CHECK(tensor.scalar_type() == at::ScalarType::Float ||
-                  tensor.scalar_type() == at::ScalarType::BFloat16,
-              "tensor must be a float or bfloat16 tensor");
+namespace transformer_engine::pytorch::stable {
 
-  const TensorWrapper tensor_cu = makeTransformerEngineTensor(tensor);
-  TensorWrapper amax_cu = makeTransformerEngineTensor(amax);
+using Tensor = torch::stable::Tensor;
 
-  nvte_fp8_block_scaling_compute_partial_amax(tensor_cu.data(), amax_cu.data(), h, w,
-                                              amax.stride(0), amax.stride(1), start_offset,
-                                              block_len, at::cuda::getCurrentCUDAStream());
+void fp8_block_scaling_compute_partial_amax(Tensor tensor, Tensor amax, int64_t h, int64_t w,
+                                            int64_t start_offset, int64_t block_len) {
+  NVTE_CHECK(block_len == 128, "Currently only block_len = 128 is supported");
+  NVTE_CHECK(amax.dim() == 2, "amax must be a 2D tensor");
+  NVTE_CHECK(amax.scalar_type() == ScalarType::Float, "amax must be a float tensor");
+  NVTE_CHECK(
+      tensor.scalar_type() == ScalarType::Float || tensor.scalar_type() == ScalarType::BFloat16,
+      "tensor must be a float or bfloat16 tensor");
+
+  const auto tensor_cu = makeTransformerEngineTensor(tensor);
+  auto amax_cu = makeTransformerEngineTensor(amax);
+
+  // Compute strides from the 2D amax shape: contiguous layout -> stride(0) = sizes[1], stride(1) = 1
+  auto amax_sizes = amax.sizes();
+  int64_t amax_stride_0 = amax_sizes[1];
+  int64_t amax_stride_1 = 1;
+
+  nvte_fp8_block_scaling_compute_partial_amax(
+      tensor_cu.data(), amax_cu.data(), static_cast<size_t>(h), static_cast<size_t>(w),
+      amax_stride_0, amax_stride_1, static_cast<size_t>(start_offset),
+      static_cast<size_t>(block_len), getCurrentCUDAStreamRaw(tensor.get_device_index()));
 }
 
-void fp8_block_scaling_partial_cast(const at::Tensor &inp, at::Tensor out, const at::Tensor &scale,
-                                    size_t h, size_t w, size_t start_offset, size_t block_len,
-                                    const transformer_engine::DType out_dtype) {
-  TORCH_CHECK(block_len == 128, "Currently only block_len = 128 is supported");
-  TORCH_CHECK(scale.dim() == 2, "scale must be a 2D tensor");
-  TORCH_CHECK(scale.scalar_type() == at::ScalarType::Float, "scale must be a float tensor");
-  TORCH_CHECK(
-      inp.scalar_type() == at::ScalarType::Float || inp.scalar_type() == at::ScalarType::BFloat16,
-      "input must be a float or bfloat16 tensor");
-  TORCH_CHECK(out.scalar_type() == at::ScalarType::Byte, "output must be a uint8 tensor");
-  TORCH_CHECK(out_dtype == transformer_engine::DType::kFloat8E4M3 ||
-                  out_dtype == transformer_engine::DType::kFloat8E5M2,
-              "out_dtype must be kFloat8E4M3 or kFloat8E5M2");
+void fp8_block_scaling_partial_cast(Tensor inp, Tensor out, Tensor scale, int64_t h, int64_t w,
+                                    int64_t start_offset, int64_t block_len, int64_t out_dtype) {
+  NVTE_CHECK(block_len == 128, "Currently only block_len = 128 is supported");
+  NVTE_CHECK(scale.dim() == 2, "scale must be a 2D tensor");
+  NVTE_CHECK(scale.scalar_type() == ScalarType::Float, "scale must be a float tensor");
+  NVTE_CHECK(inp.scalar_type() == ScalarType::Float || inp.scalar_type() == ScalarType::BFloat16,
+             "input must be a float or bfloat16 tensor");
+  NVTE_CHECK(out.scalar_type() == ScalarType::Byte, "output must be a uint8 tensor");
+  auto te_out_dtype = static_cast<transformer_engine::DType>(out_dtype);
+  NVTE_CHECK(te_out_dtype == transformer_engine::DType::kFloat8E4M3 ||
+                 te_out_dtype == transformer_engine::DType::kFloat8E5M2,
+             "out_dtype must be kFloat8E4M3 or kFloat8E5M2");
 
-  const TensorWrapper inp_cu = makeTransformerEngineTensor(inp);
-  TensorWrapper out_cu = makeTransformerEngineTensor(out);
-  const TensorWrapper scale_cu = makeTransformerEngineTensor(scale);
+  const auto inp_cu = makeTransformerEngineTensor(inp);
+  auto out_cu = makeTransformerEngineTensor(out);
+  const auto scale_cu = makeTransformerEngineTensor(scale);
+
+  auto scale_sizes = scale.sizes();
+  int64_t scale_stride_0 = scale_sizes[1];
+  int64_t scale_stride_1 = 1;
 
   nvte_fp8_block_scaling_partial_cast(
-      inp_cu.data(), out_cu.data(), scale_cu.data(), h, w, scale.stride(0), scale.stride(1),
-      start_offset, block_len, static_cast<NVTEDType>(out_dtype), at::cuda::getCurrentCUDAStream());
+      inp_cu.data(), out_cu.data(), scale_cu.data(), static_cast<size_t>(h), static_cast<size_t>(w),
+      scale_stride_0, scale_stride_1, static_cast<size_t>(start_offset),
+      static_cast<size_t>(block_len), static_cast<NVTEDType>(te_out_dtype),
+      getCurrentCUDAStreamRaw(inp.get_device_index()));
 }
 
-void mxfp8_scaling_compute_partial_amax(const at::Tensor &input, at::Tensor amax_rowwise,
-                                        at::Tensor amax_colwise, int rows, int cols,
-                                        size_t start_offset) {
-  TORCH_CHECK(input.is_contiguous(), "input must be contiguous");
-  TORCH_CHECK(amax_rowwise.is_contiguous(), "amax_rowwise must be contiguous");
-  TORCH_CHECK(amax_colwise.is_contiguous(), "amax_colwise must be contiguous");
-
-  const TensorWrapper input_cu = makeTransformerEngineTensor(input);
-  TensorWrapper amax_rowwise_cu = makeTransformerEngineTensor(amax_rowwise);
-  TensorWrapper amax_colwise_cu = makeTransformerEngineTensor(amax_colwise);
+void mxfp8_scaling_compute_partial_amax(Tensor input, Tensor amax_rowwise, Tensor amax_colwise,
+                                        int64_t rows, int64_t cols, int64_t start_offset) {
+  const auto input_cu = makeTransformerEngineTensor(input);
+  auto amax_rowwise_cu = makeTransformerEngineTensor(amax_rowwise);
+  auto amax_colwise_cu = makeTransformerEngineTensor(amax_colwise);
 
   nvte_mxfp8_scaling_compute_partial_amax(input_cu.data(), amax_rowwise_cu.data(),
-                                          amax_colwise_cu.data(), rows, cols, start_offset,
-                                          at::cuda::getCurrentCUDAStream());
+                                          amax_colwise_cu.data(), static_cast<int>(rows),
+                                          static_cast<int>(cols), static_cast<size_t>(start_offset),
+                                          getCurrentCUDAStreamRaw(input.get_device_index()));
 }
 
-void mxfp8_scaling_partial_cast(const at::Tensor &input, at::Tensor output_rowwise,
-                                at::Tensor output_colwise, const at::Tensor &scale_inv_rowwise,
-                                const at::Tensor &scale_inv_colwise, int rows, int cols,
-                                size_t start_offset) {
-  TORCH_CHECK(input.is_contiguous(), "input must be contiguous");
-  TORCH_CHECK(output_rowwise.is_contiguous(), "output_rowwise must be contiguous");
-  TORCH_CHECK(output_colwise.is_contiguous(), "output_colwise must be contiguous");
-  TORCH_CHECK(scale_inv_rowwise.is_contiguous(), "scale_inv_rowwise must be contiguous");
-  TORCH_CHECK(scale_inv_colwise.is_contiguous(), "scale_inv_colwise must be contiguous");
-
-  const TensorWrapper input_cu = makeTransformerEngineTensor(input);
-  TensorWrapper output_rowwise_cu = makeTransformerEngineTensor(output_rowwise);
-  TensorWrapper output_colwise_cu = makeTransformerEngineTensor(output_colwise);
-  const TensorWrapper scale_inv_rowwise_cu = makeTransformerEngineTensor(scale_inv_rowwise);
-  const TensorWrapper scale_inv_colwise_cu = makeTransformerEngineTensor(scale_inv_colwise);
+void mxfp8_scaling_partial_cast(Tensor input, Tensor output_rowwise, Tensor output_colwise,
+                                Tensor scale_inv_rowwise, Tensor scale_inv_colwise, int64_t rows,
+                                int64_t cols, int64_t start_offset) {
+  const auto input_cu = makeTransformerEngineTensor(input);
+  auto output_rowwise_cu = makeTransformerEngineTensor(output_rowwise);
+  auto output_colwise_cu = makeTransformerEngineTensor(output_colwise);
+  const auto scale_inv_rowwise_cu = makeTransformerEngineTensor(scale_inv_rowwise);
+  const auto scale_inv_colwise_cu = makeTransformerEngineTensor(scale_inv_colwise);
 
   nvte_mxfp8_scaling_partial_cast(input_cu.data(), output_rowwise_cu.data(),
                                   output_colwise_cu.data(), scale_inv_rowwise_cu.data(),
-                                  scale_inv_colwise_cu.data(), rows, cols, start_offset,
-                                  at::cuda::getCurrentCUDAStream());
+                                  scale_inv_colwise_cu.data(), static_cast<int>(rows),
+                                  static_cast<int>(cols), static_cast<size_t>(start_offset),
+                                  getCurrentCUDAStreamRaw(input.get_device_index()));
 }
 
-}  // namespace transformer_engine::pytorch
+}  // namespace transformer_engine::pytorch::stable
+
+STABLE_TORCH_LIBRARY_IMPL(transformer_engine, CUDA, m) {
+  m.impl("fp8_block_scaling_compute_partial_amax",
+         TORCH_BOX(&transformer_engine::pytorch::stable::fp8_block_scaling_compute_partial_amax));
+  m.impl("fp8_block_scaling_partial_cast",
+         TORCH_BOX(&transformer_engine::pytorch::stable::fp8_block_scaling_partial_cast));
+  m.impl("mxfp8_scaling_compute_partial_amax",
+         TORCH_BOX(&transformer_engine::pytorch::stable::mxfp8_scaling_compute_partial_amax));
+  m.impl("mxfp8_scaling_partial_cast",
+         TORCH_BOX(&transformer_engine::pytorch::stable::mxfp8_scaling_partial_cast));
+}

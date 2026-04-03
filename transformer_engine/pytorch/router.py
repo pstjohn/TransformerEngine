@@ -16,7 +16,8 @@ Precision Notes:
 from typing import Optional
 
 import torch
-import transformer_engine_torch as tex
+
+_ops = torch.ops.transformer_engine
 
 
 class FusedTopkScoreFunction(torch.autograd.Function):
@@ -44,13 +45,13 @@ class FusedTopkScoreFunction(torch.autograd.Function):
         # Get the metadata of the viewed logits
         num_tokens = logits.size(0)
         num_experts = logits.size(1)
-        probs, routing_map, intermediate_output = tex.fused_topk_with_score_function_fwd(
+        probs, routing_map, intermediate_output = _ops.fused_topk_with_score_function_fwd(
             logits,
             topk,
             use_pre_softmax,
-            num_groups,
-            group_topk,
-            scaling_factor,
+            num_groups if num_groups is not None else -1,
+            group_topk if group_topk is not None else -1,
+            scaling_factor if scaling_factor is not None else 1.0,
             score_function,
             expert_bias,
         )
@@ -77,7 +78,7 @@ class FusedTopkScoreFunction(torch.autograd.Function):
         grad_logits = torch.empty(
             (ctx.num_tokens, ctx.num_experts), dtype=ctx.logits_dtype, device=grad_probs.device
         )
-        tex.fused_topk_with_score_function_bwd(
+        _ops.fused_topk_with_score_function_bwd(
             ctx.num_tokens,
             ctx.num_experts,
             routing_map,
@@ -86,7 +87,7 @@ class FusedTopkScoreFunction(torch.autograd.Function):
             grad_logits,
             ctx.topk,
             ctx.use_pre_softmax,
-            ctx.scaling_factor,
+            ctx.scaling_factor if ctx.scaling_factor is not None else 1.0,
             ctx.score_function,
         )
         # Restore the shape
@@ -160,7 +161,7 @@ class FusedComputeScoresForMoEAuxLoss(torch.autograd.Function):
         # Get the metadata of the viewed logits
         num_tokens = logits.size(0)
         num_experts = logits.size(1)
-        scores, routing_map, intermediate_output = tex.fused_score_for_moe_aux_loss_fwd(
+        scores, routing_map, intermediate_output = _ops.fused_score_for_moe_aux_loss_fwd(
             logits=logits,
             topk=topk,
             score_function=score_function,
@@ -184,7 +185,7 @@ class FusedComputeScoresForMoEAuxLoss(torch.autograd.Function):
         grad_logits = torch.empty(
             (ctx.num_tokens, ctx.num_experts), dtype=ctx.logits_dtype, device=grad_scores.device
         )
-        tex.fused_score_for_moe_aux_loss_bwd(
+        _ops.fused_score_for_moe_aux_loss_bwd(
             num_tokens=ctx.num_tokens,
             num_experts=ctx.num_experts,
             intermediate_output=intermediate_output,
@@ -238,7 +239,7 @@ class FusedAuxLoss(torch.autograd.Function):
         # pylint: disable=missing-function-docstring
         num_rows = probs.size(0)
         num_cols = probs.size(1)
-        aux_loss, Const_buf = tex.fused_moe_aux_loss_fwd(
+        aux_loss, Const_buf = _ops.fused_moe_aux_loss_fwd(
             probs=probs,
             tokens_per_expert=tokens_per_expert,
             total_num_tokens=total_num_tokens,
@@ -257,7 +258,7 @@ class FusedAuxLoss(torch.autograd.Function):
     def backward(ctx, grad_aux_loss):
         # pylint: disable=missing-function-docstring
         Const_buf, tokens_per_expert = ctx.saved_tensors
-        grad_probs = tex.fused_moe_aux_loss_bwd(
+        grad_probs = _ops.fused_moe_aux_loss_bwd(
             Const_buf=Const_buf,
             tokens_per_expert=tokens_per_expert,
             num_rows=ctx.num_rows,

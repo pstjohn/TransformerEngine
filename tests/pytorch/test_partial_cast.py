@@ -68,7 +68,9 @@ def run_one_case(n, h, w, start_offset):
     # Partial amax cuda kernel
     amax_rowwise = torch.zeros(*rowwise_shape, dtype=inp.dtype, device=inp.device)
     amax_colwise = torch.zeros(*colwise_shape, dtype=inp.dtype, device=inp.device)
-    tex.mxfp8_scaling_compute_partial_amax(inp, amax_rowwise, amax_colwise, h, w, start_offset)
+    torch.ops.transformer_engine.mxfp8_scaling_compute_partial_amax(
+        inp, amax_rowwise, amax_colwise, h, w, start_offset
+    )
 
     # Partial amax pytorch reference
     amax_rowwise_ref = torch.zeros(*rowwise_shape, dtype=inp.dtype, device=inp.device)
@@ -94,7 +96,7 @@ def run_one_case(n, h, w, start_offset):
     # Partial cast cuda kernel
     output_rowwise = torch.empty_like(inp).to(torch.uint8)
     output_colwise = torch.empty_like(inp).to(torch.uint8)
-    tex.mxfp8_scaling_partial_cast(
+    torch.ops.transformer_engine.mxfp8_scaling_partial_cast(
         inp,
         output_rowwise,
         output_colwise,

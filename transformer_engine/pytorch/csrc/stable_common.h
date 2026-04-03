@@ -18,6 +18,7 @@
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/ScalarType.h>
+#include <torch/headeronly/util/HeaderOnlyArrayRef.h>
 
 // CUDA headers
 #include <cuda_runtime.h>
@@ -32,6 +33,7 @@
 namespace transformer_engine::pytorch::stable {
 
 using torch::headeronly::ScalarType;
+using IntArrayRef = torch::headeronly::IntHeaderOnlyArrayRef;
 
 // ============================================================================
 // DType converter (ScalarType -> TE DType)
@@ -118,6 +120,27 @@ inline torch::stable::Tensor allocateStableTensor(const std::vector<int64_t>& sh
                               std::nullopt,  // pin_memory
                               std::nullopt   // memory_format
   );
+}
+
+inline torch::stable::Tensor allocateStableTensorZeros(const std::vector<int64_t>& shape,
+                                                       ScalarType dtype,
+                                                       int32_t device_index = -1) {
+  auto t = allocateStableTensor(shape, dtype, device_index);
+  torch::stable::zero_(t);
+  return t;
+}
+
+// ============================================================================
+// SM count utility (replacement for at::cuda::getCurrentDeviceProperties()->multiProcessorCount)
+// ============================================================================
+
+inline int getMultiProcessorCount(int32_t device_index = -1) {
+  if (device_index < 0) {
+    device_index = torch::stable::accelerator::getCurrentDeviceIndex();
+  }
+  int sm_count = 0;
+  cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device_index);
+  return sm_count;
 }
 
 // ============================================================================
