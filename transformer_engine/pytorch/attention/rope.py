@@ -8,8 +8,9 @@ Rotary Position Embedding implementation of different types along with helper fu
 from typing import Optional, Tuple, Union, List
 import torch
 
-import transformer_engine_torch as tex
 from transformer_engine.pytorch.cpp_extensions.fused_attn import QKVFormat
+
+_ops = torch.ops.transformer_engine
 
 
 __all__ = ["RotaryPositionEmbedding", "apply_rotary_pos_emb", "apply_fused_qkv_rotary_pos_emb"]
@@ -139,7 +140,7 @@ class FusedRoPEFunc(torch.autograd.Function):
             "bshd",
             "thd",
         ), f"Unsupported tensor_format: {tensor_format}."
-        output = tex.fused_rope_forward(
+        output = _ops.fused_rope_forward(
             t,
             freqs,
             start_positions,
@@ -161,7 +162,7 @@ class FusedRoPEFunc(torch.autograd.Function):
     def backward(ctx, grad_output: torch.Tensor) -> Tuple[Union[torch.Tensor, None], ...]:
         """Fused RoPE backward."""
         freqs, cu_seqlens, start_positions = ctx.saved_tensors
-        grad_input = tex.fused_rope_backward(
+        grad_input = _ops.fused_rope_backward(
             grad_output,
             freqs,
             start_positions,
@@ -209,7 +210,7 @@ class FusedQKVRoPEFunc(torch.autograd.Function):
         assert qkv.is_contiguous(), "QKV Tensor should be contiguous."
         assert q_freqs.is_contiguous(), "q_freqs Tensor should be contiguous."
         assert k_freqs.is_contiguous(), "k_freqs Tensor should be contiguous."
-        output = tex.fused_qkv_rope_forward(
+        output = _ops.fused_qkv_rope_forward(
             qkv,
             q_freqs,
             k_freqs,
@@ -239,7 +240,7 @@ class FusedQKVRoPEFunc(torch.autograd.Function):
         grad_output_k = grad_output_k.contiguous()
         grad_output_v = grad_output_v.contiguous()
 
-        grad_input = tex.fused_qkv_rope_backward(
+        grad_input = _ops.fused_qkv_rope_backward(
             grad_output_q,
             grad_output_k,
             grad_output_v,

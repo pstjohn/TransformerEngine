@@ -23,6 +23,8 @@ from ..optimizers.multi_tensor_apply import multi_tensor_applier
 from ..utils import is_non_tn_fp8_gemm_supported
 from ..constants import NVFP4_BLOCK_SCALING_SIZE
 
+_ops = torch.ops.transformer_engine
+
 
 def replace_raw_data(tensor: QuantizedTensor, new_raw_data: torch.Tensor):
     r"""Change a quantized tensor's data buffer while preserving values
@@ -402,7 +404,7 @@ def _cast_master_weights_to_fp8_current_scaling(
 
         # Compute amax of the master weight and store it in packed_amaxes.
         if master_weight is not None:
-            tex.compute_amax(master_weight, amax)
+            _ops.compute_amax(master_weight, amax)
 
     # ---------------------------------------------------------------------------------------------
     # Step 2: Perform all-reduce on packed_amaxes to get the global amax.
@@ -563,7 +565,7 @@ def _cast_master_weights_to_fp8_blockwise_scaling(
                     f"got {len(model_weight.shape)}D shape {model_weight.shape}"
                 )
             h, w = model_weight.shape
-            tex.fp8_block_scaling_compute_partial_amax(
+            _ops.fp8_block_scaling_compute_partial_amax(
                 master_weight, amax, h, w, start_offset, block_len
             )
 
@@ -618,7 +620,7 @@ def _cast_master_weights_to_fp8_blockwise_scaling(
                 f"got {len(model_weight.shape)}D shape {model_weight.shape}"
             )
         h, w = model_weight.shape
-        tex.fp8_block_scaling_partial_cast(
+        _ops.fp8_block_scaling_partial_cast(
             master_weight, model_weight_fragment, scale, h, w, start_offset, block_len, fp8_dtype
         )
 
@@ -725,7 +727,7 @@ def _cast_master_weights_to_nvfp4_2d(
     # This replaces multiple Python tensor operations with a single kernel
     global_scale_tensor = torch.empty_like(global_amaxes)
 
-    tex.nvfp4_compute_global_scale(global_amaxes, global_scale_tensor)
+    _ops.nvfp4_compute_global_scale(global_amaxes, global_scale_tensor)
     global_scale_views = [global_scale_tensor[i : i + 1] for i in range(len(params))]
 
     # Collect tensors for batched fused scale kernel
@@ -918,7 +920,7 @@ def _cast_master_weights_to_fp8_mxfp8_scaling(
                     f"got {len(model_weight.shape)}D shape {model_weight.shape}"
                 )
             h, w = model_weight.shape
-            tex.mxfp8_scaling_compute_partial_amax(
+            _ops.mxfp8_scaling_compute_partial_amax(
                 master_weight, amax_rowwise, amax_colwise, h, w, start_offset
             )
 
@@ -966,7 +968,7 @@ def _cast_master_weights_to_fp8_mxfp8_scaling(
                 f"got {len(model_weight.shape)}D shape {model_weight.shape}"
             )
         h, w = model_weight.shape
-        tex.mxfp8_scaling_partial_cast(
+        _ops.mxfp8_scaling_partial_cast(
             master_weight,
             rowwise_fragment,
             colwise_fragment,

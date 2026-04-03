@@ -31,6 +31,8 @@ from .constants import dist_group_type
 from .utils import get_device_compute_capability
 from .jit import jit_fuser
 
+_ops = torch.ops.transformer_engine
+
 
 __all__ = [
     "autocast",
@@ -529,7 +531,7 @@ class FP8GlobalStateManager:
             )
 
             if not unfused_update:
-                tex.fused_amax_and_scale_update_after_reduction(
+                _ops.fused_amax_and_scale_update_after_reduction(
                     contiguous_amax,
                     cls.global_amax_history_buffer[buffer_key],
                     cls.global_scale_buffer[buffer_key],

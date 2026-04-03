@@ -9,7 +9,6 @@ import math
 from typing import Optional, Dict, Any, Tuple
 import torch
 
-import transformer_engine_torch as tex
 from transformer_engine_torch import DType as TE_DType
 
 from ...quantized_tensor import QuantizedTensorStorage, Quantizer
@@ -17,6 +16,8 @@ from ...quantized_tensor import QuantizedTensorStorage, Quantizer
 from ...constants import TE_DType_To_Torch
 
 from ...utils import _empty_tensor
+
+_ops = torch.ops.transformer_engine
 
 
 class Float8BlockwiseQTensorStorage(QuantizedTensorStorage):
@@ -315,8 +316,8 @@ class Float8BlockwiseQTensorStorage(QuantizedTensorStorage):
         rowwise_data = self._rowwise_data
         if not rowwise_data.is_contiguous():
             rowwise_data = rowwise_data.contiguous()
-        self._columnwise_data = tex.fp8_transpose(
-            rowwise_data, self._fp8_dtype, out=self._columnwise_data
+        self._columnwise_data = _ops.fp8_transpose(
+            rowwise_data, self._fp8_dtype, self._columnwise_data
         )
 
         if self._columnwise_scale_inv is None:
@@ -344,9 +345,7 @@ class Float8BlockwiseQTensorStorage(QuantizedTensorStorage):
             # TODO(yuzhongw, tmoon): Figure out why _old_data is not automatically
             # deallocated by GC. Manually deallocating is a temporary hack.
             _old_data = self._columnwise_data
-            self._columnwise_data = tex.fp8_transpose(
-                self._columnwise_data, self._fp8_dtype, out=None
-            )
+            self._columnwise_data = _ops.fp8_transpose(self._columnwise_data, self._fp8_dtype, None)
             _old_data.data = _empty_tensor()
             del _old_data
 

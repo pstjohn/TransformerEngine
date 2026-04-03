@@ -8,10 +8,11 @@ from typing import List, Optional, Tuple
 
 import torch
 
-import transformer_engine_torch as tex
 
 from ..quantization import FP8GlobalStateManager, get_align_size_for_quantization
 from ..jit import no_torch_dynamo
+
+_ops = torch.ops.transformer_engine
 
 
 __all__ = ["Fp8Unpadding"]
@@ -38,7 +39,9 @@ class _Fp8Unpadding(torch.autograd.Function):
         total_row = sum(m_splits)
         out_ret = torch.empty([total_row, in_features], dtype=inp.dtype, device=inp.device)
 
-        tex.fused_multi_row_unpadding(inp.view(-1, in_features), out_ret, padded_m_splits, m_splits)
+        _ops.fused_multi_row_unpadding(
+            inp.view(-1, in_features), out_ret, padded_m_splits, m_splits
+        )
 
         if is_grad_enabled:
             ctx.m_splits = m_splits
@@ -62,7 +65,7 @@ class _Fp8Unpadding(torch.autograd.Function):
                 [total_row, in_features], dtype=grad_output.dtype, device=grad_output.device
             )
             # FP8 pad input for forward, FP8 input transpose for backward wgrad
-            tex.fused_multi_row_padding(
+            _ops.fused_multi_row_padding(
                 grad_output.view(-1, in_features), grad_input, ctx.m_splits, ctx.padded_m_splits
             )
 

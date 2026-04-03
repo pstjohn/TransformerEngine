@@ -307,23 +307,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::call_guard<py::gil_scoped_release>());
   m.def("get_fused_attn_backend", &transformer_engine::pytorch::get_fused_attn_backend,
         "Get Fused Attention backend", py::call_guard<py::gil_scoped_release>());
-  m.def("compute_amax", &transformer_engine::pytorch::compute_amax,
-        "Compute absolute max value in tensor", py::arg("input"), py::arg("amax"),
-        py::call_guard<py::gil_scoped_release>());
-  m.def("fused_amax_and_scale_update_after_reduction",
-        &transformer_engine::pytorch::fused_amax_and_scale_update_after_reduction,
-        "Update amax history and FP8 scale/scale_inv after reduction",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("fp8_block_scaling_compute_partial_amax",
-        &transformer_engine::pytorch::fp8_block_scaling_compute_partial_amax,
-        "Compute partial amax from master weights for fp8 block scaling", py::arg("tensor"),
-        py::arg("amax"), py::arg("h"), py::arg("w"), py::arg("start_offset"), py::arg("block_len"),
-        py::call_guard<py::gil_scoped_release>());
-  m.def("fp8_block_scaling_partial_cast",
-        &transformer_engine::pytorch::fp8_block_scaling_partial_cast,
-        "Partial cast from master weights for fp8 block scaling", py::arg("inp"), py::arg("out"),
-        py::arg("scale"), py::arg("h"), py::arg("w"), py::arg("start_offset"), py::arg("block_len"),
-        py::arg("out_dtype"), py::call_guard<py::gil_scoped_release>());
+  // compute_amax: moved to stable ABI
+  // fused_amax_and_scale_update_after_reduction: moved to stable ABI
+  // fp8_block_scaling_compute_partial_amax: moved to stable ABI
+  // fp8_block_scaling_partial_cast: moved to stable ABI
   // NVFP4 2D
   m.def("nvfp4_2d_compute_partial_amax",
         &transformer_engine::pytorch::nvfp4_2d_compute_partial_amax,
@@ -347,20 +334,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("out_list"), py::arg("scale_list"), py::arg("global_scale_list"), py::arg("h_list"),
         py::arg("w_list"), py::arg("start_offset_list"), py::arg("block_len") = 16,
         py::call_guard<py::gil_scoped_release>());
-  m.def("mxfp8_scaling_compute_partial_amax",
-        &transformer_engine::pytorch::mxfp8_scaling_compute_partial_amax,
-        "Compute partial amax from master weights for fp8 mxfp8 scaling", py::arg("input"),
-        py::arg("amax_rowwise"), py::arg("amax_colwise"), py::arg("rows"), py::arg("cols"),
-        py::arg("start_offset"), py::call_guard<py::gil_scoped_release>());
-  m.def("mxfp8_scaling_partial_cast", &transformer_engine::pytorch::mxfp8_scaling_partial_cast,
-        "Partial cast from master weights for fp8 mxfp8 scaling", py::arg("input"),
-        py::arg("output_rowwise"), py::arg("output_colwise"), py::arg("scale_inv_rowwise"),
-        py::arg("scale_inv_colwise"), py::arg("rows"), py::arg("cols"), py::arg("start_offset"),
-        py::call_guard<py::gil_scoped_release>());
-  m.def("fused_multi_row_padding", &transformer_engine::pytorch::fused_multi_row_padding,
-        "Fused Multi-tensor padding", py::call_guard<py::gil_scoped_release>());
-  m.def("fused_multi_row_unpadding", &transformer_engine::pytorch::fused_multi_row_unpadding,
-        "Fused Multi-tensor unpadding", py::call_guard<py::gil_scoped_release>());
+  // mxfp8_scaling_compute_partial_amax: moved to stable ABI
+  // mxfp8_scaling_partial_cast: moved to stable ABI
+  // fused_multi_row_padding: moved to stable ABI
+  // fused_multi_row_unpadding: moved to stable ABI
   m.def("swizzle_scales_for_gemm_", &transformer_engine::pytorch::inplace_swizzle_scale_for_gemm,
         "Convert tensor block scales into GEMM swizzled format");
 
@@ -381,42 +358,14 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("convert_bshd_to_thd", &transformer_engine::pytorch::convert_bshd_to_thd,
         "Convert a tesnor from BSHD to THD", py::call_guard<py::gil_scoped_release>());
 
-  // fused apply rope
-  m.def("fused_rope_forward", &transformer_engine::pytorch::fused_rope_forward,
-        "Fused Apply RoPE FWD", py::call_guard<py::gil_scoped_release>());
-  m.def("fused_rope_backward", &transformer_engine::pytorch::fused_rope_backward,
-        "Fused Apply RoPE BWD", py::call_guard<py::gil_scoped_release>());
-  m.def("fused_qkv_rope_forward", &transformer_engine::pytorch::fused_qkv_rope_forward,
-        "Fused Apply QKV RoPE FWD", py::call_guard<py::gil_scoped_release>());
-  m.def("fused_qkv_rope_backward", &transformer_engine::pytorch::fused_qkv_rope_backward,
-        "Fused Apply QKV RoPE BWD", py::call_guard<py::gil_scoped_release>());
+  // fused apply rope: moved to stable ABI
+  // fused_rope_forward, fused_rope_backward: moved to stable ABI
+  // fused_qkv_rope_forward, fused_qkv_rope_backward: moved to stable ABI
 
-  // fused router
-  m.def("fused_topk_with_score_function_fwd",
-        &transformer_engine::pytorch::fused_topk_with_score_function_fwd, py::arg("logits"),
-        py::arg("topk"), py::arg("use_pre_softmax"), py::arg("num_groups"), py::arg("group_topk"),
-        py::arg("scaling_factor"), py::arg("score_function"), py::arg("expert_bias"),
-        "Fused topk with score function fwd");
-  m.def("fused_topk_with_score_function_bwd",
-        &transformer_engine::pytorch::fused_topk_with_score_function_bwd, py::arg("num_tokens"),
-        py::arg("num_experts"), py::arg("routing_map"), py::arg("intermediate_output"),
-        py::arg("grad_probs"), py::arg("grad_logits"), py::arg("topk"), py::arg("use_pre_softmax"),
-        py::arg("scaling_factor"), py::arg("score_function"), "Fused topk with score function bwd");
-  m.def("fused_score_for_moe_aux_loss_fwd",
-        &transformer_engine::pytorch::fused_score_for_moe_aux_loss_fwd, py::arg("logits"),
-        py::arg("topk"), py::arg("score_function"), "Fused aux loss with score function fwd");
-  m.def("fused_score_for_moe_aux_loss_bwd",
-        &transformer_engine::pytorch::fused_score_for_moe_aux_loss_bwd, py::arg("num_tokens"),
-        py::arg("num_experts"), py::arg("intermediate_output"), py::arg("grad_scores"),
-        py::arg("grad_logits"), py::arg("topk"), py::arg("score_function"),
-        "Fused aux loss with score function bwd");
-  m.def("fused_moe_aux_loss_fwd", &transformer_engine::pytorch::fused_moe_aux_loss_fwd,
-        py::arg("probs"), py::arg("tokens_per_expert"), py::arg("total_num_tokens"),
-        py::arg("num_experts"), py::arg("num_rows"), py::arg("num_cols"), py::arg("topk"),
-        py::arg("coeff"), "Fused aux loss fwd");
-  m.def("fused_moe_aux_loss_bwd", &transformer_engine::pytorch::fused_moe_aux_loss_bwd,
-        py::arg("Const_buf"), py::arg("tokens_per_expert"), py::arg("num_rows"),
-        py::arg("num_cols"), py::arg("grad_aux_loss"), "Fused aux loss bwd");
+  // fused router: moved to stable ABI
+  // fused_topk_with_score_function_fwd, fused_topk_with_score_function_bwd: moved to stable ABI
+  // fused_score_for_moe_aux_loss_fwd, fused_score_for_moe_aux_loss_bwd: moved to stable ABI
+  // fused_moe_aux_loss_fwd, fused_moe_aux_loss_bwd: moved to stable ABI
 
   // Dropout
   m.def("dropout_fwd", transformer_engine::pytorch::dropout_fwd, "Dropout forward with 8-bit RNG",

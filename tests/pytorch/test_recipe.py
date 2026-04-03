@@ -364,7 +364,7 @@ class TestFP8Recipe:
             expected_scale = torch.tensor([1.0], dtype=torch.float32, device="cuda")
 
         if fused_update:
-            tex.fused_amax_and_scale_update_after_reduction(
+            torch.ops.transformer_engine.fused_amax_and_scale_update_after_reduction(
                 fp8_meta[forward_key].amax_history.clone().view(-1),
                 [fp8_meta[forward_key].amax_history],
                 [fp8_meta[forward_key].scale],

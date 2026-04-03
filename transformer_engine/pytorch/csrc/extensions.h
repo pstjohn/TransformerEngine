@@ -23,35 +23,8 @@ class CommOverlapP2P;
 namespace transformer_engine::pytorch {
 
 /***************************************************************************************************
- * Router fusion
+ * Router fusion: moved to stable ABI
  **************************************************************************************************/
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_topk_with_score_function_fwd(
-    at::Tensor logits, int topk, bool use_pre_softmax, std::optional<int> num_groups,
-    std::optional<int> group_topk, std::optional<float> scaling_factor, std::string score_function,
-    std::optional<at::Tensor> expert_bias);
-
-void fused_topk_with_score_function_bwd(int num_tokens, int num_experts, at::Tensor routing_map,
-                                        at::Tensor intermediate_output, at::Tensor grad_probs,
-                                        at::Tensor grad_logits, int topk, bool use_pre_softmax,
-                                        std::optional<float> scaling_factor,
-                                        std::string score_function);
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_score_for_moe_aux_loss_fwd(
-    at::Tensor logits, int topk, std::string score_function);
-
-void fused_score_for_moe_aux_loss_bwd(int num_tokens, int num_experts,
-                                      at::Tensor intermediate_output, at::Tensor grad_probs,
-                                      at::Tensor grad_logits, int topk, std::string score_function);
-
-std::tuple<at::Tensor, at::Tensor> fused_moe_aux_loss_fwd(at::Tensor probs,
-                                                          at::Tensor tokens_per_expert,
-                                                          int total_num_tokens, int num_experts,
-                                                          int num_rows, int num_cols, int topk,
-                                                          float coeff);
-
-at::Tensor fused_moe_aux_loss_bwd(at::Tensor Const_buf, at::Tensor tokens_per_expert, int num_rows,
-                                  int num_cols, at::Tensor grad_aux_loss);
 
 /***************************************************************************************************
  * Permutation
@@ -357,22 +330,10 @@ py::object dropout_bwd(const at::Tensor &grad_output, const at::Tensor &mask,
  * FP8 recipe
  **************************************************************************************************/
 
-void compute_amax(const at::Tensor &tensor, at::Tensor &amax);
-
-void fused_amax_and_scale_update_after_reduction(const at::Tensor &amax_reduction_buffer,
-                                                 std::vector<at::Tensor> amax_histories,
-                                                 std::vector<at::Tensor> scales,
-                                                 const std::string &amax_compute_algo,
-                                                 DType fp8_dtype, float margin);
-
-// Note that the start_offset is the logical offset along the tensor dimension.
-// The offset in bytes is start_offset * sizeof(tensor.dtype)
-void fp8_block_scaling_compute_partial_amax(const at::Tensor &tensor, at::Tensor amax, size_t h,
-                                            size_t w, size_t start_offset, size_t block_len);
-
-void fp8_block_scaling_partial_cast(const at::Tensor &inp, at::Tensor out, const at::Tensor &scale,
-                                    size_t h, size_t w, size_t start_offset, size_t block_len,
-                                    const DType out_dtype);
+// compute_amax: moved to stable ABI
+// fused_amax_and_scale_update_after_reduction: moved to stable ABI
+// fp8_block_scaling_compute_partial_amax: moved to stable ABI
+// fp8_block_scaling_partial_cast: moved to stable ABI
 
 void nvfp4_2d_compute_partial_amax(const at::Tensor &tensor, at::Tensor amax, size_t h, size_t w,
                                    size_t start_offset, size_t block_len);
@@ -387,42 +348,12 @@ void nvfp4_multi_tensor_2d_partial_cast(std::vector<at::Tensor> inp_list,
                                         std::vector<at::Tensor> global_scale_list,
                                         std::vector<int64_t> h_list, std::vector<int64_t> w_list,
                                         std::vector<int64_t> start_offset_list, int64_t block_len);
-void mxfp8_scaling_compute_partial_amax(const at::Tensor &input, at::Tensor amax_rowwise,
-                                        at::Tensor amax_colwise, int rows, int cols,
-                                        size_t start_offset);
-
-void mxfp8_scaling_partial_cast(const at::Tensor &input, at::Tensor output_rowwise,
-                                at::Tensor output_colwise, const at::Tensor &scale_inv_rowwise,
-                                const at::Tensor &scale_inv_colwise, int rows, int cols,
-                                size_t start_offset);
+// mxfp8_scaling_compute_partial_amax: moved to stable ABI
+// mxfp8_scaling_partial_cast: moved to stable ABI
 
 /***************************************************************************************************
- * Rotary positional embedding
+ * Rotary positional embedding: moved to stable ABI
  **************************************************************************************************/
-
-at::Tensor fused_rope_forward(const at::Tensor &input, const at::Tensor &freqs,
-                              const std::optional<at::Tensor> start_positions,
-                              const NVTE_QKV_Format qkv_format, const bool interleaved,
-                              const std::optional<at::Tensor> cu_seqlens, const int cp_size,
-                              const int cp_rank);
-
-at::Tensor fused_rope_backward(const at::Tensor &output_grads, const at::Tensor &freqs,
-                               const std::optional<at::Tensor> start_positions,
-                               const NVTE_QKV_Format qkv_format, const bool interleaved,
-                               const std::optional<at::Tensor> cu_seqlens, const int cp_size,
-                               const int cp_rank);
-
-std::tuple<at::Tensor, at::Tensor, at::Tensor> fused_qkv_rope_forward(
-    const at::Tensor &qkv_input, const at::Tensor &q_freqs, const at::Tensor &k_freqs,
-    const std::optional<at::Tensor> start_positions, const std::vector<int> &qkv_split_arg_list,
-    const NVTE_QKV_Format qkv_format, const bool interleaved, const int cp_size, const int cp_rank);
-
-at::Tensor fused_qkv_rope_backward(const at::Tensor &q_grad_out, const at::Tensor &k_grad_out,
-                                   const at::Tensor &v_grad_out, const at::Tensor &q_freqs,
-                                   const at::Tensor &k_freqs,
-                                   const std::vector<int> &qkv_split_arg_list,
-                                   const NVTE_QKV_Format qkv_format, const bool interleaved,
-                                   const int cp_size, const int cp_rank);
 
 /***************************************************************************************************
  * Miscellaneous
@@ -522,16 +453,8 @@ void multi_tensor_compute_scale_inv_e8m0_cuda(int chunk_size, const py::object &
                                               std::vector<std::vector<at::Tensor>> tensor_lists);
 
 /***************************************************************************************************
- * padding
+ * padding: moved to stable ABI
  **************************************************************************************************/
-
-void fused_multi_row_padding(at::Tensor input, at::Tensor output,
-                             std::vector<size_t> input_row_list,
-                             std::vector<size_t> padded_input_row_list);
-
-void fused_multi_row_unpadding(at::Tensor input, at::Tensor output,
-                               std::vector<size_t> input_row_list,
-                               std::vector<size_t> unpadded_input_row_list);
 
 /***************************************************************************************************
  * Scale swizzling for GEMM
