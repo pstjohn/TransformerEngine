@@ -149,6 +149,25 @@ std::optional<std::vector<at::Tensor>> te_general_grouped_gemm(
     std::vector<at::Tensor> pre_gelu_out, bool grad, std::vector<at::Tensor> workspace,
     size_t workspaceSize, bool accumulate, bool use_split_accumulator, int math_sm_count);
 
+py::object te_general_grouped_gemm_for_grouped_tensor(
+    py::handle A, bool transa, py::handle B, bool transb, py::handle D, py::object bias,
+    at::Tensor alpha, at::Tensor beta, at::Tensor workspace_setup, at::Tensor workspace_cublas,
+    bool use_split_accumulator, int math_sm_count);
+
+py::object te_general_grouped_gemm_for_discrete_in(py::handle A, bool transa, py::handle B,
+                                                   bool transb, py::handle D, py::object bias,
+                                                   at::Tensor alpha, at::Tensor beta,
+                                                   at::Tensor workspace_setup,
+                                                   at::Tensor workspace_cublas,
+                                                   bool use_split_accumulator, int math_sm_count);
+
+py::object te_general_grouped_gemm_for_discrete_out(py::handle A, bool transa, py::handle B,
+                                                    bool transb, py::handle D, py::object bias,
+                                                    at::Tensor alpha, at::Tensor beta,
+                                                    at::Tensor workspace_setup,
+                                                    at::Tensor workspace_cublas,
+                                                    bool use_split_accumulator, int math_sm_count);
+
 /***************************************************************************************************
  * Transpose
  **************************************************************************************************/
@@ -331,32 +350,6 @@ py::object dropout_bwd(const at::Tensor &grad_output, const at::Tensor &mask,
                        std::optional<at::Tensor> grad_input = std::nullopt);
 
 /***************************************************************************************************
- * Softmax
- **************************************************************************************************/
-
-at::Tensor scaled_softmax_forward(at::Tensor input, float scale_factor);
-
-at::Tensor scaled_softmax_backward(at::Tensor output_grad_, at::Tensor softmax_results_,
-                                   float scale_factor);
-
-at::Tensor scaled_masked_softmax_forward(at::Tensor input, at::Tensor mask, float scale_factor);
-
-at::Tensor scaled_masked_softmax_backward(at::Tensor output_grad_, at::Tensor softmax_results_,
-                                          float scale_factor);
-
-at::Tensor scaled_upper_triang_masked_softmax_forward(at::Tensor input, float scale_factor);
-
-at::Tensor scaled_upper_triang_masked_softmax_backward(at::Tensor output_grads_,
-                                                       at::Tensor softmax_results_,
-                                                       float scale_factor);
-
-at::Tensor scaled_aligned_causal_masked_softmax_forward(at::Tensor input, float scale_factor);
-
-at::Tensor scaled_aligned_causal_masked_softmax_backward(at::Tensor output_grads_,
-                                                         at::Tensor softmax_results_,
-                                                         float scale_factor);
-
-/***************************************************************************************************
  * FP8 recipe
  **************************************************************************************************/
 
@@ -435,6 +428,8 @@ size_t get_cublasLt_version();
 
 size_t get_cudnn_version();
 
+at::Tensor splits_to_offsets(const at::Tensor &first_dims, int64_t logical_last_dim);
+
 /***************************************************************************************************
  * Support THD format for Context Parallel
  **************************************************************************************************/
@@ -465,6 +460,10 @@ at::Tensor thd_get_partitioned_indices(const at::Tensor &cu_seqlens, int total_t
 
 void multi_tensor_scale_cuda(int chunk_size, at::Tensor noop_flag,
                              std::vector<std::vector<at::Tensor>> tensor_lists, float scale);
+
+void multi_tensor_scale_tensor_cuda(int chunk_size, at::Tensor is_infinite,
+                                    std::vector<std::vector<at::Tensor>> tensor_lists,
+                                    at::Tensor scale);
 
 std::tuple<at::Tensor, at::Tensor> multi_tensor_l2norm_cuda(
     int chunk_size, at::Tensor noop_flag, std::vector<std::vector<at::Tensor>> tensor_lists,

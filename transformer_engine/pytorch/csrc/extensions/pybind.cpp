@@ -232,32 +232,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("moe_unpermute_bwd", transformer_engine::pytorch::moe_unpermute_bwd, "MOE unpermute BWD",
         py::call_guard<py::gil_scoped_release>());
 
-  // Softmax functions
-  m.def("scaled_softmax_forward", &transformer_engine::pytorch::scaled_softmax_forward,
-        "Scaled Softmax FWD", py::call_guard<py::gil_scoped_release>());
-  m.def("scaled_softmax_backward", &transformer_engine::pytorch::scaled_softmax_backward,
-        "Scaled Softmax BWD", py::call_guard<py::gil_scoped_release>());
-  m.def("scaled_masked_softmax_forward",
-        &transformer_engine::pytorch::scaled_masked_softmax_forward, "Scaled Masked Softmax FWD",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("scaled_masked_softmax_backward",
-        &transformer_engine::pytorch::scaled_masked_softmax_backward, "Scaled Masked Softmax BWD",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("scaled_upper_triang_masked_softmax_forward",
-        &transformer_engine::pytorch::scaled_upper_triang_masked_softmax_forward,
-        "Scaled Upper-Triangular Masked Softmax FWD", py::call_guard<py::gil_scoped_release>());
-  m.def("scaled_upper_triang_masked_softmax_backward",
-        &transformer_engine::pytorch::scaled_upper_triang_masked_softmax_backward,
-        "Scaled Upper-Triangular Masked Softmax BWD", py::call_guard<py::gil_scoped_release>());
-  m.def("scaled_aligned_causal_masked_softmax_forward",
-        &transformer_engine::pytorch::scaled_aligned_causal_masked_softmax_forward,
-        "Scaled Bottom-Right Corner Aligned Masked Softmax FWD",
-        py::call_guard<py::gil_scoped_release>());
-  m.def("scaled_aligned_causal_masked_softmax_backward",
-        &transformer_engine::pytorch::scaled_aligned_causal_masked_softmax_backward,
-        "Scaled Bottom-Right Corner Aligned Masked Softmax BWD",
-        py::call_guard<py::gil_scoped_release>());
-
   // Other granular functions
   m.def("layernorm_fwd", &transformer_engine::pytorch::layernorm_fwd, "LayerNorm", py::arg("input"),
         py::arg("weight"), py::arg("bias"), py::arg("eps"), py::arg("ln_out"), py::arg("quantizer"),
@@ -276,6 +250,15 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("quantizer_list"), py::arg("disable_bulk_allocation") = false);
   m.def("te_general_grouped_gemm", &transformer_engine::pytorch::te_general_grouped_gemm,
         "Grouped GEMM");
+  m.def("te_general_grouped_gemm_for_grouped_tensor",
+        &transformer_engine::pytorch::te_general_grouped_gemm_for_grouped_tensor,
+        "Grouped GEMM for GroupedTensor");
+  m.def("te_general_grouped_gemm_for_discrete_in",
+        &transformer_engine::pytorch::te_general_grouped_gemm_for_discrete_in,
+        "Grouped GEMM for discrete A input list");
+  m.def("te_general_grouped_gemm_for_discrete_out",
+        &transformer_engine::pytorch::te_general_grouped_gemm_for_discrete_out,
+        "Grouped GEMM for discrete output list");
   m.def("fp8_transpose", &transformer_engine::pytorch::fp8_transpose, "Transpose with FP8 I/O",
         py::arg("input"), py::arg("dtype"), py::kw_only(), py::arg("out"),
         py::call_guard<py::gil_scoped_release>());
@@ -445,6 +428,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "Get cublasLt version", py::call_guard<py::gil_scoped_release>());
   m.def("get_cudnn_version", &transformer_engine::pytorch::get_cudnn_version, "Get cuDNN version",
         py::call_guard<py::gil_scoped_release>());
+  m.def("splits_to_offsets", &transformer_engine::pytorch::splits_to_offsets,
+        "Compute grouped tensor offsets from split sizes", py::arg("first_dims"),
+        py::arg("logical_last_dim"), py::call_guard<py::gil_scoped_release>());
   m.def("get_num_cublas_streams", &nvte_get_num_compute_streams, "Get number of compute streams",
         py::call_guard<py::gil_scoped_release>());
 
@@ -490,6 +476,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   // multi-tensor functions
   m.def("multi_tensor_scale", &transformer_engine::pytorch::multi_tensor_scale_cuda,
         "Fused overflow check + scale for a list of contiguous tensors",
+        py::call_guard<py::gil_scoped_release>());
+  m.def("multi_tensor_scale_tensor", &transformer_engine::pytorch::multi_tensor_scale_tensor_cuda,
+        "Fused overflow check + scale for a list of contiguous tensors with scale passed as tensor",
         py::call_guard<py::gil_scoped_release>());
   m.def("multi_tensor_l2norm", &transformer_engine::pytorch::multi_tensor_l2norm_cuda,
         "Computes L2 norm for a list of contiguous tensors",
